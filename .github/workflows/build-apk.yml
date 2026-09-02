@@ -1,0 +1,130 @@
+name: Build Atom Bills APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+    paths:
+      - 'www/**'
+      - 'capacitor.config.json'
+      - 'package.json'
+      - 'android/**'
+      - '.github/workflows/build-apk.yml'
+
+jobs:
+  build:
+    name: Build Debug APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept Android licenses
+        run: yes | sdkmanager --licenses >/dev/null 2>&1 || true
+
+      - name: Install npm dependencies
+        run: npm ci || npm install
+
+      - name: Install Capacitor Android platform (if missing)
+        run: |
+          if [ ! -d android ]; then
+            npx cap add android
+          fi
+
+      - name: Sync Capacitor
+        run: npx cap sync android
+
+      - name: Apply Android permissions & theme (white bars)
+        run: |
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          STYLES="android/app/src/main/res/values/styles.xml"
+          COLORS="android/app/src/main/res/values/colors.xml"
+
+          # Ensure CAMERA permission
+          if ! grep -q 'android.permission.CAMERA' "$MANIFEST"; then
+            sed -i 's|<manifest |<manifest xmlns:tools="http://schemas.android.com/tools" |' "$MANIFEST" || true
+            python3 - <<'PY'
+          import pathlib
+          p = pathlib.Path("android/app/src/main/AndroidManifest.xml")
+          text = p.read_text()
+          perms = '''
+              <uses-permission android:name="android.permission.CAMERA" />
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-feature android:name="android.hardware.camera" android:required="false" />
+              <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+          '''
+          if "android.permission.CAMERA" not in text:
+              text = text.replace("<application", perms + "\n    <application", 1)
+          p.write_text(text)
+          print("Permissions injected")
+          PY
+          fi
+
+          # White status + navigation bar via theme
+          mkdir -p android/app/src/main/res/values
+          cat > "$COLORS" <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <color name="colorPrimary">#FFFFFF</color>
+              <color name="colorPrimaryDark">#FFFFFF</color>
+              <color name="colorAccent">#4F46E5</color>
+              <color name="white">#FFFFFF</color>
+          </resources>
+          EOF
+
+          if [ -f "$STYLES" ]; then
+            if ! grep -q 'windowLightStatusBar' "$STYLES"; then
+              sed -i 's|</style>|<item name="android:statusBarColor">@color/white</item>\n        <item name="android:navigationBarColor">@color/white</item>\n        <item name="android:windowLightStatusBar">true</item>\n        <item name="android:windowLightNavigationBar">true</item>\n    </style>|' "$STYLES" || true
+            fi
+          else
+            cat > "$STYLES" <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <style name="AppTheme" parent="Theme.AppCompat.Light.DarkActionBar">
+                  <item name="colorPrimary">@color/colorPrimary</item>
+                  <item name="colorPrimaryDark">@color/colorPrimaryDark</item>
+                  <item name="colorAccent">@color/colorAccent</item>
+                  <item name="android:statusBarColor">@color/white</item>
+                  <item name="android:navigationBarColor">@color/white</item>
+                  <item name="android:windowLightStatusBar">true</item>
+                  <item name="android:windowLightNavigationBar">true</item>
+              </style>
+              <style name="AppTheme.NoActionBar" parent="AppTheme">
+                  <item name="windowActionBar">false</item>
+                  <item name="windowNoTitle">true</item>
+              </style>
+          </resources>
+          EOF
+          fi
+
+      - name: Build Debug APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: AtomBills-debug-apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          retention-days: 14
+
+      - name: List output
+        run: find android/app/build/outputs -name "*.apk" -ls || true
