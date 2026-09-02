@@ -1,0 +1,33 @@
+{
+  "appId": "com.atombills.app",
+  "appName": "Atom Bills",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https",
+    "cleartext": false
+  },
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#ffffff",
+    "webContentsDebuggingEnabled": false
+  },
+  "plugins": {
+    "StatusBar": {
+      "overlaysWebView": false,
+      "style": "LIGHT",
+      "backgroundColor": "#ffffff"
+    },
+    "NavigationBar": {
+      "color": "#ffffff",
+      "style": "LIGHT"
+    },
+    "EdgeToEdge": {
+      "backgroundColor": "#ffffff",
+      "statusBarColor": "#ffffff",
+      "navigationBarColor": "#ffffff"
+    },
+    "Camera": {
+      "permissions": ["camera"]
+    }
+  }
+}
